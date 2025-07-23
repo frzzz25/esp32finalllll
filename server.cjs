@@ -1,74 +1,65 @@
 const express = require('express');
-const bodyParser = require('body-parser');
 const cors = require('cors');
-const { MongoClient } = require('mongodb');
-const path = require('path');
+const mongoose = require('mongoose');
 
 const app = express();
 const PORT = process.env.PORT || 10000;
 
-// === MongoDB Connection ===
-const mongoURI = 'mongodb+srv://frzzz25:00000000@cluster0.2jeesoj.mongodb.net/?retryWrites=true&w=majority';
-const dbName = 'esp32_logs';
-let db;
-
-MongoClient.connect(mongoURI, { useNewUrlParser: true, useUnifiedTopology: true })
-  .then(client => {
-    console.log('✅ Connected to MongoDB');
-    db = client.db(dbName);
-  })
-  .catch(error => console.error('❌ MongoDB connection failed:', error));
-
 app.use(cors());
-app.use(bodyParser.json());
+app.use(express.json());
+app.use(express.static('public'));
 
-// === Serve HTML from 'public' folder ===
-app.use(express.static(path.join(__dirname, 'public')));
+const mongoURI = 'mongodb+srv://frzzz25:00000000@cluster0.gsmmtau.mongodb.net/esp32_logs?retryWrites=true&w=majority';
 
-// === API ENDPOINTS ===
+mongoose.connect(mongoURI, { useNewUrlParser: true, useUnifiedTopology: true })
+    .then(() => console.log("✅ Connected to MongoDB"))
+    .catch(err => console.error("❌ MongoDB connection error:", err));
 
-// Receive LED state updates from ESP32
-app.post('/api/led', async (req, res) => {
-  const { color, state } = req.body;
-  const time = new Date().toLocaleString('en-PH', { timeZone: 'Asia/Manila' });
-
-  try {
-    const collection = db.collection('led_logs');
-    await collection.insertOne({ color, state, time });
-    res.status(200).send('LED log saved');
-  } catch (err) {
-    console.error(err);
-    res.status(500).send('Error saving LED log');
-  }
+const logSchema = new mongoose.Schema({
+    type: String,
+    value: String,
+    timestamp: { type: Date, default: Date.now }
 });
 
-// Receive IR sensor data from ESP32
-app.post('/api/ir', async (req, res) => {
-  const { value } = req.body;
-  const time = new Date().toLocaleString('en-PH', { timeZone: 'Asia/Manila' });
+const Log = mongoose.model('Log', logSchema);
 
-  try {
-    const collection = db.collection('ir_logs');
-    await collection.insertOne({ value, time });
-    res.status(200).send('IR log saved');
-  } catch (err) {
-    console.error(err);
-    res.status(500).send('Error saving IR log');
-  }
+let ledStates = {
+    blue: false,
+    white: false,
+    green: false
+};
+
+let irStatus = "LOW";
+
+app.get('/led-states', (req, res) => {
+    res.json(ledStates);
 });
 
-// Get logs (for frontend display)
-app.get('/api/logs', async (req, res) => {
-  try {
-    const ledLogs = await db.collection('led_logs').find().sort({ _id: -1 }).toArray();
-    const irLogs = await db.collection('ir_logs').find().sort({ _id: -1 }).toArray();
-    res.json({ ledLogs, irLogs });
-  } catch (err) {
-    console.error(err);
-    res.status(500).send('Failed to retrieve logs');
-  }
+app.post('/led', async (req, res) => {
+    const { color, state } = req.body;
+    if (!['blue', 'white', 'green'].includes(color)) {
+        return res.status(400).json({ error: 'Invalid color' });
+    }
+
+    ledStates[color] = state === 'on';
+
+    await Log.create({ type: 'LED', value: `${color.toUpperCase()} ${state.toUpperCase()}` });
+
+    res.json({ success: true });
+});
+
+app.post('/ir', async (req, res) => {
+    const { status } = req.body;
+    irStatus = status;
+    await Log.create({ type: 'IR', value: status });
+    res.json({ success: true });
+});
+
+app.get('/logs', async (req, res) => {
+    const logs = await Log.find().sort({ timestamp: -1 }).limit(100);
+    res.json(logs);
 });
 
 app.listen(PORT, () => {
-  console.log(`Server running on port ${PORT}`);
+    console.log(`Server running on port ${PORT}`);
 });
