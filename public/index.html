@@ -1,69 +1,65 @@
 <!DOCTYPE html>
 <html>
 <head>
-  <title>ESP32 LED + IR Control</title>
-  <meta charset="UTF-8" />
+  <title>ESP32 Control Panel</title>
+  <meta charset="UTF-8">
   <style>
-    body {
-      font-family: Arial;
-      padding: 20px;
-    }
-    button {
-      padding: 10px;
-      margin: 5px;
-      font-size: 16px;
-    }
-    .log-box {
-      margin-top: 20px;
-      padding: 10px;
-      border: 1px solid gray;
-      max-height: 300px;
-      overflow-y: scroll;
-    }
+    body { font-family: Arial; padding: 20px; background: #f9f9f9; }
+    button { padding: 10px 20px; margin: 5px; font-size: 16px; }
+    .log { font-size: 14px; background: #eee; margin: 5px 0; padding: 5px; border-radius: 5px; }
   </style>
 </head>
 <body>
-  <h1>ESP32 LED Controller</h1>
+  <h1>ESP32 LED & IR Control</h1>
 
-  <button onclick="controlLED('blue')">Toggle Blue LED</button>
-  <button onclick="controlLED('white')">Toggle White LED</button>
-  <button onclick="controlLED('green')">Toggle Green LED</button>
+  <div>
+    <h3>LED Control</h3>
+    <button onclick="controlLED('blue', 'on')">Turn Blue ON</button>
+    <button onclick="controlLED('blue', 'off')">Turn Blue OFF</button><br>
+    <button onclick="controlLED('white', 'on')">Turn White ON</button>
+    <button onclick="controlLED('white', 'off')">Turn White OFF</button><br>
+    <button onclick="controlLED('green', 'on')">Turn Green ON</button>
+    <button onclick="controlLED('green', 'off')">Turn Green OFF</button>
+  </div>
 
-  <h3>Live IR Sensor Value: <span id="ir-status">Loading...</span></h3>
+  <div>
+    <h3>Live IR Sensor Status</h3>
+    <div id="ir-status">Loading...</div>
+  </div>
 
-  <div class="log-box">
-    <h4>Log History:</h4>
-    <pre id="log-history">Loading logs...</pre>
+  <div>
+    <h3>Activity Logs</h3>
+    <div id="logs"></div>
   </div>
 
   <script>
-    let ledStates = { blue: false, white: false, green: false };
+    const baseUrl = location.origin;
 
-    async function controlLED(color) {
-      ledStates[color] = !ledStates[color];
-      await fetch('/api/led', {
+    async function controlLED(color, state) {
+      await fetch(`${baseUrl}/led`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ color, state: ledStates[color] ? 'ON' : 'OFF' })
+        body: JSON.stringify({ color, state })
       });
-      loadLogs();
     }
 
-    async function loadLogs() {
-      const res = await fetch('/api/logs');
-      const data = await res.json();
-      const irLogs = data.irLogs.map(log => `[IR] ${log.value} @ ${log.time}`).join('\n');
-      const ledLogs = data.ledLogs.map(log => `[LED] ${log.color.toUpperCase()} ${log.state} @ ${log.time}`).join('\n');
-      document.getElementById('log-history').textContent = ledLogs + '\n' + irLogs;
-
-      // Show last IR status
-      if (data.irLogs.length > 0) {
-        document.getElementById('ir-status').textContent = data.irLogs[0].value;
-      }
+    async function fetchLogs() {
+      const res = await fetch(`${baseUrl}/logs`);
+      const logs = await res.json();
+      document.getElementById('logs').innerHTML =
+        logs.map(log => `<div class="log">[${new Date(log.timestamp).toLocaleString()}] ${log.type} - ${log.value}</div>`).join('');
     }
 
-    loadLogs();
-    setInterval(loadLogs, 3000);
+    async function fetchIRStatus() {
+      const res = await fetch(`${baseUrl}/led-states`);
+      const state = await res.json();
+      document.getElementById('ir-status').innerText = "IR: " + (state.ir || 'LOW');
+    }
+
+    setInterval(() => {
+      fetchLogs();
+      fetchIRStatus();
+    }, 2000);
   </script>
 </body>
 </html>
